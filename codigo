@@ -113,7 +113,7 @@ class Consulta:
         return valor_base + total_procedimentos
 
 # =====================================================================
-# 2. SISTEMA DE GESTÃO E PERSISTÊNCIA (TXT)
+# 2. SISTEMA DE GESTÃO E PERSISTÊNCIA
 # =====================================================================
 
 class ClinicaController:
@@ -257,7 +257,7 @@ class ClinicaController:
         self.salvar_dados()
 
 # =====================================================================
-# 3. INTERFACE VISUAL DO TERMINAL (UI)
+# 3. INTERFACE VISUAL DO TERMINAL
 # =====================================================================
 
 class InterfaceTerminal:
