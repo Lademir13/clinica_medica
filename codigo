@@ -1,0 +1,449 @@
+import os
+import sys
+from datetime import datetime
+from enum import Enum
+from typing import List, Optional
+
+# =====================================================================
+# 1. ENUMS E CLASSES DE DOMÍNIO
+# =====================================================================
+
+class TipoAtendimento(Enum):
+    PARTICULAR = "Particular"
+    CONVENIO = "Convênio"
+
+class StatusProfissional(Enum):
+    ATIVO = "Ativo"
+    AFASTADO = "Afastado"
+
+class StatusSlot(Enum):
+    DISPONIVEL = "Disponível"
+    AGENDADO = "Agendado"
+
+class TipoVisita(Enum):
+    PRIMEIRA = "Primeira Consulta"
+    RETORNO = "Retorno"
+
+class Especialidade:
+    def __init__(self, nome: str, valor_particular: float, valor_convenio: float):
+        self.nome = nome
+        self.valor_particular = valor_particular
+        self.valor_convenio = valor_convenio
+
+    def __str__(self):
+        return f"{self.nome} (Part: R${self.valor_particular:.2f} | Conv: R${self.valor_convenio:.2f})"
+
+class Procedimento:
+    def __init__(self, nome: str, valor_particular: float, valor_convenio: float):
+        self.nome = nome
+        self.valor_particular = valor_particular
+        self.valor_convenio = valor_convenio
+
+    def __str__(self):
+        return f"{self.nome} (Part: R${self.valor_particular:.2f} | Conv: R${self.valor_convenio:.2f})"
+
+class Paciente:
+    def __init__(self, nome: str, cpf: str, tipo_atendimento: TipoAtendimento, convenio_nome: Optional[str] = None):
+        self.nome = nome
+        self.cpf = cpf
+        self.tipo_atendimento = tipo_atendimento
+        self.convenio_nome = convenio_nome
+        self.faltas = 0
+
+    def __str__(self):
+        info_conv = f" ({self.convenio_nome})" if self.tipo_atendimento == TipoAtendimento.CONVENIO else ""
+        return f"{self.nome} (CPF: {self.cpf}) - {self.tipo_atendimento.value}{info_conv}"
+
+class AgendaSlot:
+    def __init__(self, data_hora: datetime):
+        self.data_hora = data_hora
+        self.status = StatusSlot.DISPONIVEL
+
+class Profissional:
+    def __init__(self, nome: str, registro: str, especialidade: Especialidade):
+        self.nome = nome
+        self.registro = registro  # CRM ou CRO
+        self.especialidade = especialidade
+        self.status = StatusProfissional.ATIVO
+        self.agenda: List[AgendaSlot] = []
+
+    def __str__(self):
+        return f"{self.nome} ({self.registro}) - {self.especialidade.nome} [{self.status.value}]"
+
+class Consulta:
+    def __init__(self, paciente: Paciente, profissional: Profissional, slot: AgendaSlot, tipo_visita: TipoVisita):
+        # Validação de segurança: Profissional deve estar ativo para novas consultas
+        if profissional.status != StatusProfissional.ATIVO:
+            raise ValueError(f"O profissional {profissional.nome} não está com a agenda ativa.")
+        
+        # Validação de segurança: Impedir conflito de horário
+        if slot.status != StatusSlot.DISPONIVEL:
+            raise ValueError("Conflito de Horário! Este slot de tempo já está ocupado.")
+
+        self.paciente = paciente
+        self.profissional = profissional
+        self.slot = slot
+        self.tipo_visita = tipo_visita
+        self.status = "Agendada"
+        self.procedimentos_extras: List[Procedimento] = []
+        self.diagnostico: str = ""
+        
+        # Ocupa o slot de tempo imediatamente
+        self.slot.status = StatusSlot.AGENDADO
+
+    def calcular_total(self) -> float:
+        """Calcula dinamicamente o valor da consulta somado aos procedimentos extras."""
+        # Se for retorno dentro do prazo de acompanhamento, o valor base da consulta é zero
+        if self.tipo_visita == TipoVisita.RETORNO:
+            valor_base = 0.0
+        else:
+            if self.paciente.tipo_atendimento == TipoAtendimento.PARTICULAR:
+                valor_base = self.profissional.especialidade.valor_particular
+            else:
+                valor_base = self.profissional.especialidade.valor_convenio
+
+        # Soma os procedimentos adicionais efetuados
+        total_procedimentos = 0.0
+        for proc in self.procedimentos_extras:
+            if self.paciente.tipo_atendimento == TipoAtendimento.PARTICULAR:
+                total_procedimentos += proc.valor_particular
+            else:
+                total_procedimentos += proc.valor_convenio
+
+        return valor_base + total_procedimentos
+
+# =====================================================================
+# 2. SISTEMA DE GESTÃO E PERSISTÊNCIA (TXT)
+# =====================================================================
+
+class ClinicaController:
+    ARQUIVO_DADOS = "dados_clinica.txt"
+
+    def __init__(self):
+        self.especialidades: List[Especialidade] = []
+        self.procedimentos: List[Procedimento] = []
+        self.pacientes: List[Paciente] = []
+        self.profissionais: List[Profissional] = []
+        self.consultas: List[Consulta] = []
+
+    def salvar_dados(self):
+        """Escreve o estado atual de todas as listas no arquivo txt."""
+        try:
+            with open(self.ARQUIVO_DADOS, "w", encoding="utf-8") as f:
+                # 1. Especialidades
+                f.write(f"[ESPECIALIDADES]\n")
+                for e in self.especialidades:
+                    f.write(f"{e.nome};{e.valor_particular};{e.valor_convenio}\n")
+                
+                # 2. Procedimentos
+                f.write(f"[PROCEDIMENTOS]\n")
+                for p in self.procedimentos:
+                    f.write(f"{p.nome};{p.valor_particular};{p.valor_convenio}\n")
+
+                # 3. Pacientes
+                f.write(f"[PACIENTES]\n")
+                for pac in self.pacientes:
+                    conv = pac.convenio_nome if pac.convenio_nome else "None"
+                    f.write(f"{pac.nome};{pac.cpf};{pac.tipo_atendimento.value};{conv};{pac.faltas}\n")
+
+                # 4. Profissionais e Horários
+                f.write(f"[PROFISSIONAIS]\n")
+                for prof in self.profissionais:
+                    # Salva dados básicos e os slots de agenda correspondentes
+                    agenda_str = ",".join([f"{s.data_hora.isoformat()}|{s.status.value}" for s in prof.agenda])
+                    f.write(f"{prof.nome};{prof.registro};{prof.especialidade.nome};{prof.status.value};{agenda_str}\n")
+
+                # 5. Consultas
+                f.write(f"[CONSULTAS]\n")
+                for c in self.consultas:
+                    proc_nomes = ",".join([p.nome for p in c.procedimentos_extras])
+                    f.write(f"{c.paciente.cpf};{c.profissional.registro};{c.slot.data_hora.isoformat()};{c.tipo_visita.value};{c.status};{c.diagnostico};{proc_nomes}\n")
+
+        except IOError as e:
+            print(f"\n Erro crítico ao salvar os dados no disco: {e}")
+
+    def carregar_dados(self):
+        """Lê o arquivo txt e reconstrói as instâncias de objetos em memória."""
+        if not os.path.exists(self.ARQUIVO_DADOS):
+            # Cria dados iniciais básicos se o arquivo não existir
+            self._criar_dados_iniciais()
+            return
+
+        try:
+            with open(self.ARQUIVO_DADOS, "r", encoding="utf-8") as f:
+                secao_atual = None
+                for linha in f:
+                    linha = linha.strip()
+                    if not linha:
+                        continue
+                    if linha.startswith("[") and linha.endswith("]"):
+                        secao_atual = linha
+                        continue
+
+                    partes = linha.split(";")
+                    
+                    if secao_atual == "[ESPECIALIDADES]":
+                        self.especialidades.append(Especialidade(partes[0], float(partes[1]), float(partes[2])))
+                    
+                    elif secao_atual == "[PROCEDIMENTOS]":
+                        self.procedimentos.append(Procedimento(partes[0], float(partes[1]), float(partes[2])))
+
+                    elif secao_atual == "[PACIENTES]":
+                        tipo = TipoAtendimento.PARTICULAR if partes[2] == "Particular" else TipoAtendimento.CONVENIO
+                        conv = None if partes[3] == "None" else partes[3]
+                        pac = Paciente(partes[0], partes[1], tipo, conv)
+                        pac.faltas = int(partes[4])
+                        self.pacientes.append(pac)
+
+                    elif secao_atual == "[PROFISSIONAIS]":
+                        esp = next((e for e in self.especialidades if e.nome == partes[2]), None)
+                        if esp:
+                            prof = Profissional(partes[0], partes[1], esp)
+                            prof.status = StatusProfissional.ATIVO if partes[3] == "Ativo" else StatusProfissional.AFASTADO
+                            
+                            # Reconstrói os slots da agenda
+                            if partes[4]:
+                                slots_raw = partes[4].split(",")
+                                for s_raw in slots_raw:
+                                    dt_iso, status_val = s_raw.split("|")
+                                    slot = AgendaSlot(datetime.fromisoformat(dt_iso))
+                                    slot.status = StatusSlot.AGENDADO if status_val == "Agendado" else StatusSlot.DISPONIVEL
+                                    prof.agenda.append(slot)
+                            self.profissionais.append(prof)
+
+                    elif secao_atual == "[CONSULTAS]":
+                        pac = next((p for p in self.pacientes if p.cpf == partes[0]), None)
+                        prof = next((pr for pr in self.profissionais if pr.registro == partes[1]), None)
+                        dt_consulta = datetime.fromisoformat(partes[2])
+                        
+                        if pac and prof:
+                            slot = next((s for s in prof.agenda if s.data_hora == dt_consulta), None)
+                            if not slot:
+                                # Se o slot não existir por inconsistência, recria ele
+                                slot = AgendaSlot(dt_consulta)
+                                prof.agenda.append(slot)
+                            
+                            tipo_v = TipoVisita.PRIMEIRA if partes[3] == "Primeira Consulta" else TipoVisita.RETORNO
+                            
+                            # Para carregar sem lançar a exceção de slot ocupado do construtor
+                            slot.status = StatusSlot.DISPONIVEL 
+                            c = Consulta(pac, prof, slot, tipo_v)
+                            c.status = partes[4]
+                            c.diagnostico = partes[5]
+                            
+                            if partes[6]:
+                                nomes_proc = partes[6].split(",")
+                                for np in nomes_proc:
+                                    proc_obj = next((p for p in self.procedimentos if p.nome == np), None)
+                                    if proc_obj:
+                                        c.procedimentos_extras.append(proc_obj)
+                            self.consultas.append(c)
+        except Exception as e:
+            print(f"\n Aviso: O arquivo de dados está corrompido ou inacessível. Iniciando com dados padrão. Detalhe: {e}")
+            self._criar_dados_iniciais()
+
+    def _criar_dados_iniciais(self):
+        """Cria especialidades e procedimentos padrão se for a primeira execução do sistema."""
+        self.especialidades = [
+            Especialidade("Clínica Médica", 150.0, 70.0),
+            Especialidade("Odontologia Geral", 180.0, 90.0),
+            Especialidade("Pediatria", 200.0, 100.0)
+        ]
+        self.procedimentos = [
+            Procedimento("Limpeza Preventiva", 120.0, 50.0),
+            Procedimento("Aplicação de Flúor", 60.0, 30.0),
+            Procedimento("Raio-X de Controle", 90.0, 40.0)
+        ]
+        self.salvar_dados()
+
+# =====================================================================
+# 3. INTERFACE VISUAL DO TERMINAL (UI)
+# =====================================================================
+
+class InterfaceTerminal:
+    def __init__(self):
+        self.controller = ClinicaController()
+        self.controller.carregar_dados()
+
+    def limpar_tela(self):
+        os.system('cls' if os.name == 'nt' else 'clear')
+
+    def exibir_cabecalho(self, titulo: str):
+        print("=" * 60)
+        print(f"{titulo.center(60)}")
+        print("=" * 60)
+
+    def aguardar_input(self):
+        input("\nPressione [ENTER] para retornar ao menu...")
+
+    def menu_principal(self):
+        while True:
+            self.limpar_tela()
+            self.exibir_cabecalho("🏥 SISTEMA INTEGRADO DE CLÍNICA MÉDICA/ODONTO")
+            print(" 1. Cadastrar Novo Paciente")
+            print(" 2. Cadastrar Novo Profissional de Saúde")
+            print(" 3. Disponibilizar Horário na Agenda de um Profissional")
+            print(" 4. Agendar Nova Consulta")
+            print(" 5. Realizar/Concluir Consulta (Prontuário)")
+            print(" 6. Registrar Falta ou Cancelamento")
+            print(" 7. Listar Cadastros Gerais da Clínica")
+            print(" 0. Salvar e Sair")
+            print("=" * 60)
+            
+            opcao = input("Selecione a operação desejada: ").strip()
+            
+            if opcao == "1":
+                self.cadastrar_paciente()
+            elif opcao == "2":
+                self.cadastrar_profissional()
+            elif opcao == "3":
+                self.gerar_agenda()
+            elif opcao == "4":
+                self.agendar_consulta()
+            elif opcao == "5":
+                self.concluir_consulta_interface()
+            elif opcao == "6":
+                self.registrar_falta_cancelamento()
+            elif opcao == "7":
+                self.listar_tudo()
+            elif opcao == "0":
+                self.controller.salvar_dados()
+                print("\n Dados salvos com sucesso! Encerrando sistema...")
+                sys.exit(0)
+            else:
+                print("\n Opção inválida! Tente novamente.")
+                self.aguardar_input()
+
+    def cadastrar_paciente(self):
+        self.limpar_tela()
+        self.exibir_cabecalho("CADASTRO DE PACIENTE")
+        try:
+            nome = input("Nome Completo: ").strip()
+            if not nome: raise ValueError("O nome não pode estar em branco.")
+            
+            cpf = input("CPF (apenas números): ").strip()
+            if not cpf: raise ValueError("CPF é obrigatório.")
+            if any(p.cpf == cpf for p in self.controller.pacientes):
+                raise ValueError("Este CPF já está cadastrado no sistema.")
+
+            print("\nTipo de Atendimento:")
+            print("1. Particular")
+            print("2. Convênio")
+            tipo_op = input("Opção: ").strip()
+
+            if tipo_op == "1":
+                tipo = TipoAtendimento.PARTICULAR
+                convenio = None
+            elif tipo_op == "2":
+                tipo = TipoAtendimento.CONVENIO
+                convenio = input("Nome da Operadora do Convênio: ").strip()
+                if not convenio: raise ValueError("Nome do convênio não pode ser em branco.")
+            else:
+                raise ValueError("Opção de atendimento inválida.")
+
+            novo_paciente = Paciente(nome, cpf, tipo, convenio)
+            self.controller.pacientes.append(novo_paciente)
+            self.controller.salvar_dados()
+            print(f"\n Paciente {nome} cadastrado com sucesso!")
+
+        except ValueError as e:
+            print(f"\n Erro no cadastro: {e}")
+        self.aguardar_input()
+
+    def cadastrar_profissional(self):
+        self.limpar_tela()
+        self.exibir_cabecalho("CADASTRO DE PROFISSIONAL DE SAÚDE")
+        try:
+            nome = input("Nome do Profissional: ").strip()
+            if not nome: raise ValueError("O nome é obrigatório.")
+
+            registro = input("Registro de Classe (CRM/CRO): ").strip().upper()
+            if not registro: raise ValueError("O registro profissional é obrigatório.")
+            if any(p.registro == registro for p in self.controller.profissionais):
+                raise ValueError("Este registro de classe já está cadastrado.")
+
+            print("\nSelecione a Especialidade:")
+            for idx, esp in enumerate(self.controller.especialidades, 1):
+                print(f"{idx}. {esp}")
+            
+            esp_op = int(input("Escolha o número: ").strip()) - 1
+            if esp_op < 0 or esp_op >= len(self.controller.especialidades):
+                raise ValueError("Especialidade selecionada inválida.")
+            
+            especialidade_escolhida = self.controller.especialidades[esp_op]
+            
+            novo_prof = Profissional(nome, registro, especialidade_escolhida)
+            self.controller.profissionais.append(novo_prof)
+            self.controller.salvar_dados()
+            print(f"\n Dr(a). {nome} cadastrado com sucesso!")
+
+        except (ValueError, IndexError):
+            print("\n Entrada de dados inválida ou fora dos limites permitidos.")
+        self.aguardar_input()
+
+    def gerar_agenda(self):
+        self.limpar_tela()
+        self.exibir_cabecalho("DISPONIBILIZAR AGENDA")
+        try:
+            if not self.controller.profissionais:
+                print("Nenhum profissional cadastrado no sistema.")
+                self.aguardar_input()
+                return
+
+            print("Selecione o Profissional:")
+            for idx, p in enumerate(self.controller.profissionais, 1):
+                print(f"{idx}. {p}")
+            
+            prof_op = int(input("Escolha o número: ").strip()) - 1
+            prof = self.controller.profissionais[prof_op]
+
+            data_str = input("Digite a data da agenda (DD/MM/AAAA): ").strip()
+            hora_str = input("Digite o horário de início (HH:MM): ").strip()
+            
+            data_hora = datetime.strptime(f"{data_str} {hora_str}", "%d/%m/%Y %H:%M")
+            
+            # Evita duplicar exatamente o mesmo horário de agenda para o mesmo profissional
+            if any(slot.data_hora == data_hora for slot in prof.agenda):
+                raise ValueError("Este horário já existe na agenda deste profissional.")
+
+            prof.adicionar_horario(data_hora)
+            self.controller.salvar_dados()
+            print(f"\n Horário {data_hora.strftime('%d/%m/%Y %H:%M')} adicionado para Dr(a). {prof.nome}")
+
+        except Exception as e:
+            print(f"\n Erro ao adicionar horário: {e}")
+        self.aguardar_input()
+
+    def agendar_consulta(self):
+        self.limpar_tela()
+        self.exibir_cabecalho("MARCAÇÃO DE CONSULTA")
+        try:
+            if not self.controller.pacientes or not self.controller.profissionais:
+                raise ValueError("É necessário ter pelo menos um paciente e um profissional cadastrados.")
+
+            # 1. Seleciona Paciente
+            print("Escolha o Paciente:")
+            for idx, pac in enumerate(self.controller.pacientes, 1):
+                print(f"{idx}. {pac}")
+            pac_op = int(input("Escolha o número: ").strip()) - 1
+            paciente = self.controller.pacientes[pac_op]
+
+            # 2. Seleciona Profissional
+            print("\nEscolha o Profissional:")
+            for idx, prof in enumerate(self.controller.profissionais, 1):
+                print(f"{idx}. {prof}")
+            prof_op = int(input("Escolha o número: ").strip()) - 1
+            profissional = self.controller.profissionais[prof_op]
+
+            # 3. Escolhe Horário Disponível
+            slots_livres = [s for s in profissional.agenda if s.status == StatusSlot.DISPONIVEL]
+            if not slots_livres:
+                raise ValueError(f"Não há horários disponíveis para o profissional {profissional.nome}.")
+
+            print("\nHorários livres na agenda:")
+            for idx, slot in enumerate(slots_livres, 1):
+                print(f"{idx}. {slot.data_hora.strftime('%d/%m/%Y às %H:%M')}")
+            slot_op = int(input("Selecione o horário desejado: ").strip()) - 1
+            slot_escolhido = slots_livres[slot_op]
+
+     
