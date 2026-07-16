@@ -2,12 +2,12 @@ import json
 import os
 from datetime import datetime
 
-# --- CONFIGURAÇÃO DOS ARQUIVOS TXT ---
+#configuração arquivos
 ARQUIVO_PROFISSIONAIS = "profissionais.txt"
 ARQUIVO_PACIENTES = "pacientes.txt"
 ARQUIVO_CONSULTAS = "consultas.txt"
 
-# --- FUNÇÕES DE PERSISTÊNCIA (GRAVAÇÃO E LEITURA EM TXT) ---
+#funções de persistência
 def carregar_dados(nome_arquivo):
     """Carrega dados estruturados de um arquivo TXT."""
     if not os.path.exists(nome_arquivo):
@@ -27,7 +27,7 @@ def salvar_dados(nome_arquivo, dados):
         json.dump(dados, f, indent=4, ensure_ascii=False)
 
 
-# --- CADASTRO DE PROFISSIONAIS ---
+#cadastro de profissionais
 def cadastrar_profissional():
     print("\n--- CADASTRO DE PROFISSIONAL ---")
     profissionais = carregar_dados(ARQUIVO_PROFISSIONAIS)
@@ -57,7 +57,7 @@ def cadastrar_profissional():
     
     profissionais.append(novo_prof)
     salvar_dados(ARQUIVO_PROFISSIONAIS, profissionais)
-    print(f"✔️ Profissional {nome} cadastrado com sucesso! ID: {id_prof}")
+    print(f"Profissional {nome} cadastrado com sucesso! ID: {id_prof}")
 
 def alterar_status_profissional():
     print("\n--- ALTERAR STATUS DO PROFISSIONAL ---")
@@ -93,12 +93,12 @@ def alterar_status_profissional():
                 return
             
             salvar_dados(ARQUIVO_PROFISSIONAIS, profissionais)
-            print(f"✔️ Status de {p['nome']} atualizado para: {p['status']}.")
+            print(f"Status de {p['nome']} atualizado para: {p['status']}.")
             return
     print("Profissional não encontrado.")
 
 
-# --- CADASTRO DE PACIENTES ---
+#cadastro de pacientes
 def cadastrar_paciente():
     print("\n--- CADASTRO DE PACIENTE ---")
     pacientes = carregar_dados(ARQUIVO_PACIENTES)
@@ -119,10 +119,10 @@ def cadastrar_paciente():
     
     pacientes.append(novo_paciente)
     salvar_dados(ARQUIVO_PACIENTES, pacientes)
-    print(f"✔️ Paciente {nome} cadastrado com sucesso! ID: {id_paciente}")
+    print(f"Paciente {nome} cadastrado com sucesso! ID: {id_paciente}")
 
 
-# --- AGENDAMENTO DE CONSULTAS (PREVENÇÃO DE CONFLITO) ---
+# Agendamento De Consultas
 def agendar_consulta():
     print("\n--- AGENDAMENTO DE CONSULTA ---")
     pacientes = carregar_dados(ARQUIVO_PACIENTES)
@@ -184,7 +184,7 @@ def agendar_consulta():
     )
     
     if conflito:
-        print("❌ ERRO: Este profissional já possui uma consulta marcada para este dia e horário!")
+        print("ERRO: Este profissional já possui uma consulta marcada para este dia e horário!")
         return
 
     # 5. Definição do Tipo de Consulta (Primeira x Retorno) e Valor Base
@@ -219,10 +219,10 @@ def agendar_consulta():
     
     consultas.append(nova_consulta)
     salvar_dados(ARQUIVO_CONSULTAS, consultas)
-    print(f"✔️ Consulta agendada com sucesso! Valor estimado: R$ {valor_base:.2f}")
+    print(f" Consulta agendada com sucesso! Valor estimado: R$ {valor_base:.2f}")
 
 
-# --- CONCLUSÃO DE CONSULTA E REGISTRO DE PROCEDIMENTOS ---
+# conclusão de consulta e registro de procedimento
 def concluir_consulta():
     print("\n--- FINALIZAR/CONCLUIR CONSULTA ---")
     consultas = carregar_dados(ARQUIVO_CONSULTAS)
@@ -272,13 +272,13 @@ def concluir_consulta():
     consulta["data_hora_conclusao"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
     salvar_dados(ARQUIVO_CONSULTAS, consultas)
-    print(f"\n✔️ Consulta Concluída!")
+    print(f"\n Consulta Concluída!")
     print(f"Valor Base: R$ {consulta['valor_base']:.2f}")
     print(f"Procedimentos Extras: R$ {valor_total_extras:.2f}")
     print(f"Valor Total Final: R$ {consulta['valor_total']:.2f}")
 
 
-# --- FALTA, REMARCAÇÃO OU PENALIDADES ---
+#Falta, Remarcação Ou Penalidades
 def gerenciar_faltas_e_remarcacoes():
     print("\n--- GERENCIAR OCORRÊNCIAS (Faltas/Remarcações) ---")
     consultas = carregar_dados(ARQUIVO_CONSULTAS)
@@ -311,7 +311,7 @@ def gerenciar_faltas_e_remarcacoes():
         taxa_falta = 50.0
         consulta["valor_total"] = consulta["valor_base"] + taxa_falta
         consulta["prontuario"] = f"FALTA SEM AVISO. Penalidade aplicada: Multa de R$ {taxa_falta:.2f}."
-        print(f"✔️ Ocorrência de Falta gravada. Total devido: R$ {consulta['valor_total']:.2f}")
+        print(f" Ocorrência de Falta gravada. Total devido: R$ {consulta['valor_total']:.2f}")
     elif opcao == "2":
         # Remarcação fora do prazo
         nova_data = input("Nova Data (DD/MM/AAAA): ").strip()
@@ -323,7 +323,7 @@ def gerenciar_faltas_e_remarcacoes():
         consulta["horario"] = novo_horario
         consulta["valor_total"] = consulta["valor_base"] + taxa_remarcacao
         consulta["prontuario"] = f"Remarcada fora do prazo. Penalidade aplicada: Taxa de R$ {taxa_remarcacao:.2f}."
-        print(f"✔️ Consulta remarcada. Nova Data: {nova_data} às {novo_horario}. Valor atualizado com taxa: R$ {consulta['valor_total']:.2f}")
+        print(f" Consulta remarcada. Nova Data: {nova_data} às {novo_horario}. Valor atualizado com taxa: R$ {consulta['valor_total']:.2f}")
     else:
         print("Opção inválida.")
         return
@@ -331,11 +331,11 @@ def gerenciar_faltas_e_remarcacoes():
     salvar_dados(ARQUIVO_CONSULTAS, consultas)
 
 
-# --- MENU PRINCIPAL ---
+# MENU 
 def menu():
     while True:
         print("\n=============================================")
-        print("      SISTEMA DE CLÍNICA INTEGRADA (TXT)     ")
+        print("      SISTEMA DE CLÍNICA INTEGRADA      ")
         print("=============================================")
         print("1 - Cadastrar Profissional de Saúde")
         print("2 - Gerenciar Profissional (Status/Afastamento)")
