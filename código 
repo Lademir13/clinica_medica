@@ -1,0 +1,370 @@
+import json
+import os
+from datetime import datetime
+
+# --- CONFIGURAÇÃO DOS ARQUIVOS TXT ---
+ARQUIVO_PROFISSIONAIS = "profissionais.txt"
+ARQUIVO_PACIENTES = "pacientes.txt"
+ARQUIVO_CONSULTAS = "consultas.txt"
+
+# --- FUNÇÕES DE PERSISTÊNCIA (GRAVAÇÃO E LEITURA EM TXT) ---
+def carregar_dados(nome_arquivo):
+    """Carrega dados estruturados de um arquivo TXT."""
+    if not os.path.exists(nome_arquivo):
+        return []
+    try:
+        with open(nome_arquivo, "r", encoding="utf-8") as f:
+            conteudo = f.read().strip()
+            if not conteudo:
+                return []
+            return json.loads(conteudo)
+    except Exception:
+        return []
+
+def salvar_dados(nome_arquivo, dados):
+    """Salva os dados estruturados de volta no arquivo TXT."""
+    with open(nome_arquivo, "w", encoding="utf-8") as f:
+        json.dump(dados, f, indent=4, ensure_ascii=False)
+
+
+# --- CADASTRO DE PROFISSIONAIS ---
+def cadastrar_profissional():
+    print("\n--- CADASTRO DE PROFISSIONAL ---")
+    profissionais = carregar_dados(ARQUIVO_PROFISSIONAIS)
+    
+    id_prof = len(profissionais) + 1
+    nome = input("Nome do Profissional: ").strip()
+    especialidade = input("Especialidade (ex: Cardiologia, Odontopediatria): ").strip()
+    
+    print("\nDefina os horários disponíveis (ex: '08:00', '09:00', '14:00'). Digite 'fim' para encerrar:")
+    horarios = []
+    while True:
+        horario = input("Horário disponível: ").strip()
+        if horario.lower() == 'fim':
+            break
+        if len(horario) == 5 and ":" in horario:
+            horarios.append(horario)
+        else:
+            print("Formato inválido! Use o formato HH:MM.")
+            
+    novo_prof = {
+        "id": id_prof,
+        "nome": nome,
+        "especialidade": especialidade,
+        "horarios_disponiveis": sorted(list(set(horarios))), # remove duplicados
+        "status": "Ativo" # Ativo, Afastado, Desligado, Suspenso
+    }
+    
+    profissionais.append(novo_prof)
+    salvar_dados(ARQUIVO_PROFISSIONAIS, profissionais)
+    print(f"✔️ Profissional {nome} cadastrado com sucesso! ID: {id_prof}")
+
+def alterar_status_profissional():
+    print("\n--- ALTERAR STATUS DO PROFISSIONAL ---")
+    profissionais = carregar_dados(ARQUIVO_PROFISSIONAIS)
+    if not profissionais:
+        print("Nenhum profissional cadastrado.")
+        return
+
+    for p in profissionais:
+        print(f"[{p['id']}] {p['nome']} - Especialidade: {p['especialidade']} (Status: {p['status']})")
+        
+    try:
+        id_busca = int(input("\nDigite o ID do profissional que deseja alterar: "))
+    except ValueError:
+        print("Entrada inválida.")
+        return
+
+    for p in profissionais:
+        if p["id"] == id_busca:
+            print("Selecione o novo status:")
+            print("1 - Ativo\n2 - Afastado\n3 - Desligado\n4 - Agenda Suspensa")
+            opcao = input("Opção: ")
+            if opcao == "1":
+                p["status"] = "Ativo"
+            elif opcao == "2":
+                p["status"] = "Afastado"
+            elif opcao == "3":
+                p["status"] = "Desligado"
+            elif opcao == "4":
+                p["status"] = "Agenda Suspensa"
+            else:
+                print("Opção inválida.")
+                return
+            
+            salvar_dados(ARQUIVO_PROFISSIONAIS, profissionais)
+            print(f"✔️ Status de {p['nome']} atualizado para: {p['status']}.")
+            return
+    print("Profissional não encontrado.")
+
+
+# --- CADASTRO DE PACIENTES ---
+def cadastrar_paciente():
+    print("\n--- CADASTRO DE PACIENTE ---")
+    pacientes = carregar_dados(ARQUIVO_PACIENTES)
+    
+    id_paciente = len(pacientes) + 1
+    nome = input("Nome Completo: ").strip()
+    
+    print("Tipo de Atendimento:")
+    print("1 - Particular\n2 - Convênio")
+    tipo_op = input("Opção: ")
+    tipo = "Particular" if tipo_op == "1" else "Convênio"
+    
+    novo_paciente = {
+        "id": id_paciente,
+        "nome": nome,
+        "tipo": tipo
+    }
+    
+    pacientes.append(novo_paciente)
+    salvar_dados(ARQUIVO_PACIENTES, pacientes)
+    print(f"✔️ Paciente {nome} cadastrado com sucesso! ID: {id_paciente}")
+
+
+# --- AGENDAMENTO DE CONSULTAS (PREVENÇÃO DE CONFLITO) ---
+def agendar_consulta():
+    print("\n--- AGENDAMENTO DE CONSULTA ---")
+    pacientes = carregar_dados(ARQUIVO_PACIENTES)
+    profissionais = carregar_dados(ARQUIVO_PROFISSIONAIS)
+    consultas = carregar_dados(ARQUIVO_CONSULTAS)
+    
+    if not pacientes or not profissionais:
+        print("Erro: É necessário ter profissionais e pacientes cadastrados.")
+        return
+
+    # 1. Escolha do Paciente
+    print("\n--- Pacientes Cadastrados ---")
+    for pac in pacientes:
+        print(f"[{pac['id']}] {pac['nome']} ({pac['tipo']})")
+    try:
+        id_pac = int(input("Digite o ID do Paciente: "))
+        paciente = next((p for p in pacientes if p["id"] == id_pac), None)
+        if not paciente:
+            print("Paciente não encontrado.")
+            return
+    except ValueError:
+        return
+
+    # 2. Escolha da Especialidade e Profissional Ativo
+    profissionais_ativos = [p for p in profissionais if p["status"] == "Ativo"]
+    if not profissionais_ativos:
+        print("Não há profissionais ativos disponíveis no momento.")
+        return
+
+    print("\n--- Especialidades/Profissionais Disponíveis ---")
+    for prof in profissionais_ativos:
+        print(f"[{prof['id']}] {prof['nome']} | Especialidade: {prof['especialidade']}")
+        
+    try:
+        id_prof = int(input("Digite o ID do Profissional Escolhido: "))
+        profissional = next((p for p in profissionais_ativos if p["id"] == id_prof), None)
+        if not profissional:
+            print("Profissional indisponível ou inexistente.")
+            return
+    except ValueError:
+        return
+
+    # 3. Data e Horário
+    data_consulta = input("Data da Consulta (DD/MM/AAAA): ").strip()
+    
+    print(f"\nHorários padrão de {profissional['nome']}: {', '.join(profissional['horarios_disponiveis'])}")
+    horario = input("Escolha um horário: ").strip()
+    
+    if horario not in profissional["horarios_disponiveis"]:
+        print("Aviso: Este horário não faz parte da grade padrão do profissional, mas tentaremos agendar.")
+
+    # 4. Verificação de Conflito de Horário (Mesmo Profissional, Data e Hora)
+    conflito = any(
+        c["id_profissional"] == id_prof and 
+        c["data"] == data_consulta and 
+        c["horario"] == horario and 
+        c["status"] == "Agendada"
+        for c in consultas
+    )
+    
+    if conflito:
+        print("❌ ERRO: Este profissional já possui uma consulta marcada para este dia e horário!")
+        return
+
+    # 5. Definição do Tipo de Consulta (Primeira x Retorno) e Valor Base
+    print("\nTipo de Consulta:")
+    print("1 - Primeira Consulta\n2 - Retorno")
+    tipo_consulta_op = input("Opção: ")
+    tipo_consulta = "Primeira Consulta" if tipo_consulta_op == "1" else "Retorno"
+    
+    # Regra de preços fictícia para ilustração das variáveis do enunciado
+    if tipo_consulta == "Retorno":
+        prazo_retorno = input("Está dentro do prazo de retorno (geralmente 30 dias)? (s/n): ").lower() == 's'
+        valor_base = 0.0 if prazo_retorno else 80.0
+    else:
+        # Consulta particular é mais cara que convênio
+        valor_base = 150.0 if paciente["tipo"] == "Particular" else 50.0
+
+    nova_consulta = {
+        "id": len(consultas) + 1,
+        "id_paciente": paciente["id"],
+        "nome_paciente": paciente["nome"],
+        "id_profissional": profissional["id"],
+        "nome_profissional": profissional["nome"],
+        "data": data_consulta,
+        "horario": horario,
+        "tipo_consulta": tipo_consulta,
+        "valor_base": valor_base,
+        "procedimentos_extras": [],
+        "valor_total": valor_base,
+        "status": "Agendada", # Agendada, Concluída, Cancelada, Falta
+        "prontuario": ""
+    }
+    
+    consultas.append(nova_consulta)
+    salvar_dados(ARQUIVO_CONSULTAS, consultas)
+    print(f"✔️ Consulta agendada com sucesso! Valor estimado: R$ {valor_base:.2f}")
+
+
+# --- CONCLUSÃO DE CONSULTA E REGISTRO DE PROCEDIMENTOS ---
+def concluir_consulta():
+    print("\n--- FINALIZAR/CONCLUIR CONSULTA ---")
+    consultas = carregar_dados(ARQUIVO_CONSULTAS)
+    
+    consultas_agendadas = [c for c in consultas if c["status"] == "Agendada"]
+    if not consultas_agendadas:
+        print("Nenhuma consulta agendada pendente de conclusão.")
+        return
+        
+    for c in consultas_agendadas:
+        print(f"[{c['id']}] Paciente: {c['nome_paciente']} com Dr(a). {c['nome_profissional']} em {c['data']} às {c['horario']}")
+        
+    try:
+        id_cons = int(input("\nDigite o ID da consulta realizada: "))
+        consulta = next((c for c in consultas if c["id"] == id_cons), None)
+        if not consulta or consulta["status"] != "Agendada":
+            print("Consulta inválida.")
+            return
+    except ValueError:
+        return
+
+    # Registro de Prontuário
+    print(f"\nPaciente: {consulta['nome_paciente']}")
+    prontuario = input("Descreva o diagnóstico/anotações do Prontuário:\n> ").strip()
+    
+    # Procedimentos extras
+    procedimentos = []
+    valor_total_extras = 0.0
+    print("\nHouve algum procedimento extra realizado nesta consulta? (ex: Limpeza, raio-x, curativo)")
+    while True:
+        resp = input("Deseja adicionar um procedimento extra? (s/n): ").lower()
+        if resp != 's':
+            break
+        nome_proc = input("Nome do Procedimento: ").strip()
+        try:
+            valor_proc = float(input("Valor do Procedimento (R$): "))
+            procedimentos.append({"nome": nome_proc, "valor": valor_proc})
+            valor_total_extras += valor_proc
+        except ValueError:
+            print("Valor inválido. Procedimento descartado.")
+
+    # Atualizando o registro da consulta
+    consulta["status"] = "Concluída"
+    consulta["prontuario"] = prontuario
+    consulta["procedimentos_extras"] = procedimentos
+    consulta["valor_total"] = consulta["valor_base"] + valor_total_extras
+    consulta["data_hora_conclusao"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+    salvar_dados(ARQUIVO_CONSULTAS, consultas)
+    print(f"\n✔️ Consulta Concluída!")
+    print(f"Valor Base: R$ {consulta['valor_base']:.2f}")
+    print(f"Procedimentos Extras: R$ {valor_total_extras:.2f}")
+    print(f"Valor Total Final: R$ {consulta['valor_total']:.2f}")
+
+
+# --- FALTA, REMARCAÇÃO OU PENALIDADES ---
+def gerenciar_faltas_e_remarcacoes():
+    print("\n--- GERENCIAR OCORRÊNCIAS (Faltas/Remarcações) ---")
+    consultas = carregar_dados(ARQUIVO_CONSULTAS)
+    
+    consultas_ativas = [c for c in consultas if c["status"] == "Agendada"]
+    if not consultas_ativas:
+        print("Nenhuma consulta ativa encontrada.")
+        return
+
+    for c in consultas_ativas:
+        print(f"[{c['id']}] {c['nome_paciente']} - Dr(a). {c['nome_profissional']} em {c['data']}")
+
+    try:
+        id_cons = int(input("\nSelecione o ID da consulta afetada: "))
+        consulta = next((c for c in consultas if c["id"] == id_cons), None)
+        if not consulta:
+            print("Consulta não encontrada.")
+            return
+    except ValueError:
+        return
+
+    print("\nSelecione o evento ocorrido:")
+    print("1 - Falta sem aviso (Aplica penalidade de cobrança integral)")
+    print("2 - Remarcação fora do prazo (Aplica taxa de remarcação)")
+    opcao = input("Opção: ")
+
+    if opcao == "1":
+        consulta["status"] = "Falta"
+        # Penalidade: Cobrança de multa de falta
+        taxa_falta = 50.0
+        consulta["valor_total"] = consulta["valor_base"] + taxa_falta
+        consulta["prontuario"] = f"FALTA SEM AVISO. Penalidade aplicada: Multa de R$ {taxa_falta:.2f}."
+        print(f"✔️ Ocorrência de Falta gravada. Total devido: R$ {consulta['valor_total']:.2f}")
+    elif opcao == "2":
+        # Remarcação fora do prazo
+        nova_data = input("Nova Data (DD/MM/AAAA): ").strip()
+        novo_horario = input("Novo Horário (HH:MM): ").strip()
+        
+        # Penalidade de remarcação tardia
+        taxa_remarcacao = 30.0
+        consulta["data"] = nova_data
+        consulta["horario"] = novo_horario
+        consulta["valor_total"] = consulta["valor_base"] + taxa_remarcacao
+        consulta["prontuario"] = f"Remarcada fora do prazo. Penalidade aplicada: Taxa de R$ {taxa_remarcacao:.2f}."
+        print(f"✔️ Consulta remarcada. Nova Data: {nova_data} às {novo_horario}. Valor atualizado com taxa: R$ {consulta['valor_total']:.2f}")
+    else:
+        print("Opção inválida.")
+        return
+
+    salvar_dados(ARQUIVO_CONSULTAS, consultas)
+
+
+# --- MENU PRINCIPAL ---
+def menu():
+    while True:
+        print("\n=============================================")
+        print("      SISTEMA DE CLÍNICA INTEGRADA (TXT)     ")
+        print("=============================================")
+        print("1 - Cadastrar Profissional de Saúde")
+        print("2 - Gerenciar Profissional (Status/Afastamento)")
+        print("3 - Cadastrar Paciente")
+        print("4 - Agendar Consulta (Evita Choque de Horário)")
+        print("5 - Concluir Consulta (Lançar Prontuário e Extras)")
+        print("6 - Registrar Ocorrência (Falta / Remarcação Tardia)")
+        print("0 - Sair")
+        print("=============================================")
+        
+        opcao = input("Selecione uma opção: ").strip()
+        
+        if opcao == "1":
+            cadastrar_profissional()
+        elif opcao == "2":
+            alterar_status_profissional()
+        elif opcao == "3":
+            cadastrar_paciente()
+        elif opcao == "4":
+            agendar_consulta()
+        elif opcao == "5":
+            concluir_consulta()
+        elif opcao == "6":
+            gerenciar_faltas_e_remarcacoes()
+        elif opcao == "0":
+            print("Saindo do sistema... Até logo!")
+            break
+        else:
+            print("Opção inválida! Tente novamente.")
+
+if __name__ == "__main__":
+    menu()
